@@ -1,0 +1,238 @@
+Model Selection
+================
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring web pages,
+and a very nice way of distributing an analysis. It has some very simple syntax rules.
+
+
+```{r}
+library(ISLR)
+summary(Hitters)
+```
+There are some missing values here, so before we proceed we will remove them:
+
+```{r}
+?na.omit
+dim(Hitters)
+with(Hitters,sum(is.na(Salary)))
+sum(is.na(Hitters$Salary))
+Hitters=na.omit(Hitters)
+dim(Hitters)
+with(Hitters,sum(is.na(Salary)))
+```
+
+
+
+Best Subset regression
+------------------------
+Best subset regression looks through all possible regression models of all different subset sizes and looks for the best model of each size based on having smallest RSS (i.e. largest R-squared) based on training data. And so produces a sequence of models which is has best subset of predictors for each particular size. For each best model from each subset size, we use CV prediction error, Cp, BIC, or adjusted R-squared from test data to determine the best subset of predictors.
+We will now use the package `leaps` to evaluate all the best-subset models.
+```{r}
+library(leaps)
+regfit.8=regsubsets(Salary~.,data=Hitters)
+  # by default this will only go up to subset size 8 
+summary(regfit.8)
+  # the way to interpret the summary output is the rows represent the subset size and
+  # the "*" indiciates which variables are selected in the best model of that subset size
+```
+It gives by default best-subsets up to size 8; lets increase that to 19, i.e. all the variables
+```{r}
+regfit.full=regsubsets(Salary~.,data=Hitters, nvmax=19)
+reg.summary=summary(regfit.full)
+  # saving summary of regfit.full into an object called reg.summary
+names(reg.summary)
+  # the summary object reg.summary has a few components
+plot(reg.summary$cp,xlab="Number of Variables",ylab="Cp")
+which.min(reg.summary$cp)
+points(10,reg.summary$cp[10],pch=20,col="red")
+```
+There is a plot method for the `regsubsets`  object
+```{r}
+plot(regfit.full,scale="Cp")
+  # the way to interpret this grid is each row represents a best model from each subset
+  # size. Each row (i.e. model) has a certain Cp value. Lower Cp is better.
+  # Black squares mean the variable (x-axis) is included in the model and white squares
+  # mean the variable isn't in the model. You'll notice higher Cp's are associated with
+  # subsets where either all the variables are selected or very little of the variables
+  # are selected (i.e. mostly black or mostly white going horizontally across), and the
+  # models with low Cp's has a subset of variables somewhere in the middle.
+coef(regfit.full,10)
+  # this provides the linear regression coefficients for the best model with subset size
+  # of 10 variables
+```
+
+
+
+Forward Stepwise Selection
+--------------------------
+So base subset is quite aggressive looking at all possible subsets. Forward stepwise is a greedy algorithm. Each time it includes the next best variable, abd it produces a nested sequence. So it's a much less adventurous search. It keeps a nested sequence of models each time you just add the variable that improves the set the most.
+Here we use the `regsubsets` function but specify the `method="forward" option:
+```{r}
+regfit.fwd=regsubsets(Salary~.,data=Hitters,nvmax=19,method="forward")
+summary(regfit.fwd)
+  # notice the models are nested, Each new model includes all the variables that were
+  # before, plus one new one.
+plot(regfit.fwd,scale="Cp")
+```
+
+
+
+
+Model Selection Using a Validation Set
+---------------------------------------
+Lets make a training and validation set, so that we can choose a good subset model.
+We will do it using a slightly different approach from what was done in the the book.
+```{r}
+dim(Hitters)
+set.seed(1)
+train=sample(seq(263),180,replace=FALSE)
+train
+regfit.fwd=regsubsets(Salary~.,data=Hitters[train,],nvmax=19,method="forward")
+```
+Now we will make predictions on the observations not used for training. We know there are 19 models, so we set up some vectors to record the errors. We have to do a bit of work here, because there is no predict method for `regsubsets`.
+```{r}
+val.errors=rep(NA,19)
+x.test=model.matrix(Salary~.,data=Hitters[-train,])
+  # notice the -train to get non-train data
+for(i in 1:19){
+  coefi=coef(regfit.fwd,id=i)
+  pred=x.test[,names(coefi)]%*%coefi
+    # matrix multiplication
+  val.errors[i]=mean((Hitters$Salary[-train]-pred)^2)
+}
+plot(sqrt(val.errors),ylab="Root MSE",ylim=c(275,425),pch=19,type="b")
+points(sqrt(regfit.fwd$rss[-1]/180),col="blue",pch=19,type="b")
+  # we're removing the first term because that's the null model which was not included
+  # in our validation plot. Also note that the training MSE is monotonically decreasing
+  # since each additional variable should improve the fit on the training data
+legend("topright",legend=c("Training","Validation"),col=c("blue","black"),pch=19)
+```
+As we expect, the training error goes down monotonically as the model gets bigger, but not so for the validation error.
+
+This was a little tedious - not having a predict method for `regsubsets`. So we will write one!
+```{r}
+predict.regsubsets=function(object,newdata,id,...){
+  form=as.formula(object$call[[2]])
+  mat=model.matrix(form,newdata)
+  coefi=coef(object,id=id)
+  mat[,names(coefi)]%*%coefi
+}
+```
+
+
+
+
+Model Selection by Cross-Validation
+-----------------------------------
+We will do 10-fold cross-validation. Its really easy!
+```{r}
+set.seed(11)
+folds=sample(rep(1:10,length=nrow(Hitters)))
+folds
+table(folds)
+cv.errors=matrix(NA,10,19)
+  # 10 rows for each of the folds and 19 columns for each of the variable subset sizes
+for(k in 1:10){
+  best.fit=regsubsets(Salary~.,data=Hitters[folds!=k,],nvmax=19,method="forward")
+  for(i in 1:19){
+    pred=predict.regsubsets(best.fit,Hitters[folds==k,],id=i)
+      # we wrote the function in a way that the general predict function can also work
+    cv.errors[k,i]=mean( (Hitters$Salary[folds==k]-pred)^2)
+      # assigns the computed MSE of the validation fold k for the forward stepwise model
+      # of subset size i 
+  }
+}
+?apply
+rmse.cv=sqrt(apply(cv.errors,2,mean))
+  # we want to average the MSE over the 10 folds for each subset size. To do this we use
+  # the apply function. Margin = 2 in the paramters means we will apply the mean function
+  # over the columns since the object is a matrix. We also use sqrt() to get the root MSE
+plot(rmse.cv,pch=19,type="b")
+```
+
+
+
+Ridge Regression and the Lasso
+-------------------------------
+We will use the package `glmnet`, which does not use the model formula language, so we will set up an `x` and `y`.
+```{r}
+library(glmnet)
+?model.matrix
+x=model.matrix(Salary~.-1,data=Hitters)
+  # model matrix will create the predictor matrix of the model, and would expand factors to
+  # dummy variables. The -1 removes the intercept term, which is probably why League has
+  # two dummy variables in this case
+table(Hitters$League)
+table(Hitters$NewLeague)
+colnames(x)
+colnames(Hitters)
+dim(x)
+dim(Hitters)
+y=Hitters$Salary
+```
+First we will fit a ridge-regression model. This is achieved by calling `glmnet` with `alpha=0` (see the helpfile). There is also a `cv.glmnet` function which will do the cross-validation for us. 
+```{r}
+?glmnet
+fit.ridge=glmnet(x,y,alpha=0)
+plot(fit.ridge,xvar="lambda",label=TRUE)
+  # recall for Ridge Regression and Lasso Regerssion we are adding a penalty to the RSS
+  # based on a sum of a function of the beta coefficients for each variable. This penalty
+  # is controlled by the the paramater lambda. The larger the lamda, the more the RRS 
+  # would be better off with the beta coefficients just being 0 or close to 0.
+  # To interpret this plot, the x axis represents lamda and the lines represent the beta
+  # coefficient value of a particular variable. With lambda = 0, we have OLS regression.
+  # So unlike subset and forward stepwise regression, which controls the complexity of a
+  # model by restricting the number of variables, ridge regression keeps all the variables
+  # in and shrinks the coefficients towards zero.
+cv.ridge=cv.glmnet(x,y,alpha=0)
+  # by default it does 10-fold CV. 
+plot(cv.ridge)
+  # From the right of the plot, the mean squared error is very high, and the coefficients
+  # are restricted to be too small, and then at some point, it kind of levels off. There's
+  # two vertical lines: one is at the minimum MSE, and the other vertical line is at one
+  # standard error of the minimum, within one standard error. The line at the higher
+  # lambda is a more restricted model that does almost as well as the minimum, and
+  # sometimes we'll go for that. And at the top here, it's indicating that at all stages,
+  # there's all 20 variables in the model, so that's our 19 variables plus the intercept.
+```
+Now we fit a lasso model; for this we use the default `alpha=1`
+```{r}
+fit.lasso=glmnet(x,y)
+  # alpha = 1 (default) is for Lasso
+plot(fit.lasso,xvar="lambda",label=TRUE)
+plot(fit.lasso,xvar="dev",label=TRUE)
+  # we also have choices for the x-axis and can specify it as the fraction of deviance
+  # explained
+cv.lasso=cv.glmnet(x,y)
+plot(cv.lasso)
+  # One of the vertical lines is at the point where the cross-validated MSE is smallest.
+  # This model with the smallest MSE has 14 variables as indicated on the top of the chart.
+  # The second vertical line is at the more restricted model whose cross-validated MSE is
+  # within one MSE standard error (recall the one standard error rule) of the model with
+  # the best MSE. This more restricted model has 6 variables.
+coef(cv.lasso)
+  # this gives us the beta coefficients from the more restricted model identified by the
+  # vertical line in the previous plot (notice there are 6 beta coefficients.
+```
+
+ Suppose we want to use our earlier train/validation division to select the `lambda` for the lasso.
+ This is easy to do.
+```{r}
+lasso.tr=glmnet(x[train,],y[train])
+lasso.tr
+  # For each of the models in the path, it gives you the degrees of freedom, which is the
+  # number of non-zero coefficients, the percentage deviance explained, which is like r
+  # squared for generalized linear models, and the lamda value corresponding to that fit.
+  # Usually the algorithm looks at 100 values of lamda but if not much is changing it will
+  # stop computing early, in this case after looking at 83 different values of lamda
+pred=predict(lasso.tr,x[-train,])
+dim(pred)
+  # we have 83 observations in the validation set, and just so happen to have 83 lamda
+  # values. For each observation we are predicting the y-value using each of the 83 models
+  # fitted using the 83 different lambda values
+rmse= sqrt(apply((y[-train]-pred)^2,2,mean))
+plot(log(lasso.tr$lambda),rmse,type="b",xlab="Log(lambda)")
+lam.best=lasso.tr$lambda[order(rmse)[1]]
+lam.best
+coef(lasso.tr,s=lam.best)
+```
