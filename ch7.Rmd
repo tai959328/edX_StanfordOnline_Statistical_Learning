@@ -16,18 +16,34 @@ Polynomials
 First we will use polynomials, and focus on a single predictor age:
 
 ```{r}
+?poly
+poly_age_4 = poly(age,4)
+poly_age_4 = cbind(poly_age_4, age)
+# poly() isn't simply raising the value of age to the 1st, 2nd, 3rd and 4th power
+head(poly_age_4)
 fit=lm(wage~poly(age,4),data=Wage)
+# this fits a model predicting wage using a fourth degree orthogonal polynomial of age. The longer way to build this model would have been to build up a data matrix with a column for age, age squared, age cubed, and age to the fourth power, then running a regression off that matrix.
 summary(fit)
 ```
 
-The `poly()` function generates a basis of *orthogonal polynomials*.
+
+We see that the coefficients, they're all named poly age 4, and then 1, 2, 3, and 4.
+This will be for degree 1, 2, 3, and 4, the different degree monomials. The first two are very significant, the cubic is significant, and the quartic is just barely not significant. So it seems like a cubic polynomial would be sufficient. Now normally, when you have a whole matrix, you can't just look at these coefficients independently. Usually what it means is the effect of, say, this coefficient in the presence of all the others, and if the
+variables are correlated, you just can't make sequential decisions. But here, it's a little different, and that's because the function, poly, generates *orthogonal polynomials* (any two different polynomials in the sequence are orthogonal to each other). So it's like we're doing a regression with uncorrelated predictors.
+
+
+
 Lets make a plot of the fitted function, along with the standard errors of the fit.
 
 ```{r fig.width=7, fig.height=6}
 agelims=range(age)
+# returns a vector of length 2, containing the minimum and maxium of age
 age.grid=seq(from=agelims[1],to=agelims[2])
+# returns a vector of sequenced values from the age minimum to age maximum
 preds=predict(fit,newdata=list(age=age.grid),se=TRUE)
+# predicts wage for each value of age in age.grid
 se.bands=cbind(preds$fit+2*preds$se,preds$fit-2*preds$se)
+# computes the confidence bands around the prediction
 plot(age,wage,col="darkgrey")
 lines(age.grid,preds$fit,lwd=2,col="blue")
 matlines(age.grid,se.bands,col="blue",lty=2)
