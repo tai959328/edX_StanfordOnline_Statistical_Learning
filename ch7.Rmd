@@ -1,4 +1,4 @@
-Nonlinear Models
+### Nonlinear Models
 ========================================================
 Here we explore the use of nonlinear models using some tools in R
 
@@ -18,11 +18,9 @@ First we will use polynomials, and focus on a single predictor age:
 ```{r}
 ?poly
 poly_age_4 = poly(age,4)
-poly_age_4 = cbind(poly_age_4, age)
-# poly() isn't simply raising the value of age to the 1st, 2nd, 3rd and 4th power
+poly_age_4 = cbind(poly_age_4, age) # poly() isn't simply raising the value of age to the 1st, 2nd, 3rd and 4th power
 head(poly_age_4)
-fit=lm(wage~poly(age,4),data=Wage)
-# this fits a model predicting wage using a fourth degree orthogonal polynomial of age. The longer way to build this model would have been to build up a data matrix with a column for age, age squared, age cubed, and age to the fourth power, then running a regression off that matrix.
+fit=lm(wage~poly(age,4),data=Wage) # this fits a model predicting wage using a fourth degree orthogonal polynomial of age. The longer way to build this model would have been to build up a data matrix with a column for age, age squared, age cubed, and age to the fourth power, then running a regression off that matrix.
 summary(fit)
 ```
 
@@ -36,50 +34,44 @@ variables are correlated, you just can't make sequential decisions. But here, it
 Lets make a plot of the fitted function, along with the standard errors of the fit.
 
 ```{r fig.width=7, fig.height=6}
-agelims=range(age)
-# returns a vector of length 2, containing the minimum and maxium of age
-age.grid=seq(from=agelims[1],to=agelims[2])
-# returns a vector of sequenced values from the age minimum to age maximum
-preds=predict(fit,newdata=list(age=age.grid),se=TRUE)
-# predicts wage for each value of age in age.grid
-se.bands=cbind(preds$fit+2*preds$se,preds$fit-2*preds$se)
-# computes the confidence bands around the prediction
+agelims=range(age) # returns a vector of length 2, containing the minimum and maxium of age
+age.grid=seq(from=agelims[1],to=agelims[2]) # returns a vector of sequenced values from the age minimum to age maximum
+preds=predict(fit,newdata=list(age=age.grid),se=TRUE) # predicts wage for each value of age in age.grid. newdata is going to be a data frame, or a list at with named variables that were used in the original fit. se=TRUE means we want the standard errors of the prediction
+se.bands=cbind(preds$fit+2*preds$se,preds$fit-2*preds$se) # computes the confidence bands around the prediction
 plot(age,wage,col="darkgrey")
-lines(age.grid,preds$fit,lwd=2,col="blue")
-matlines(age.grid,se.bands,col="blue",lty=2)
+lines(age.grid,preds$fit,lwd=2,col="blue") # lwd is for line width
+matlines(age.grid,se.bands,col="blue",lty=2) # lty=2 is line type 2 which is a broken line
 ```
 
 There are other more direct ways of doing this in R. For example
 
 ```{r}
-fita=lm(wage~age+I(age^2)+I(age^3)+I(age^4),data=Wage)
+fita=lm(wage~age+I(age^2)+I(age^3)+I(age^4),data=Wage) # notice we have to wrap the terms with a power on them in an identity function, and that's because the caret (^) has a special meaning in the formula language
 summary(fita)
 ```
 
-Here `I()` is a *wrapper* function; we need it because `age^2` means something to the formula language, 
-while `I(age^2)` is protected.
-The coefficients are different to those we got before! However, the fits are the same:
+The coefficients and the p values look different than what we saw before.
+That's because we're using a different basis for representing the polynomial. So if you change the basis, you get different coefficients, and therefore, you'll get different p values. That may sound a little disconcerting, but the real thing we're interested in is the fitted polynomial, and as we'll see, that hasn't changed.
+
 
 ```{r}
-plot(fitted(fit),fitted(fita))
+plot(fitted(fit),fitted(fita)) # We can crudely check that the two fits are the same by doing a plot of the fitted values from our original polynomial model "fit" against "fita", and you see a perfectly straight line, which says those fitted values are at least closely the same
 ```
 
-By using orthogonal polynomials in this simple way, it turns out that we can separately test
-for each coefficient. So if we look at the summary again, we can see that the linear, quadratic
-and cubic terms are significant, but not the quartic.
+Again, by using orthogonal polynomials for "fit", it turns out that we can separately test for each coefficient. So if we look at the summary again, we can see that the linear, quadratic and cubic terms are significant, but not the quartic.
 
 ```{r}
 summary(fit)
 ```
 
-This only works with linear regression, and if there is a single predictor. In general we would use `anova()`
-as this next example demonstrates.
+This however only works with linear regression (i.e. this would not work with GLMs), and if there is a single predictor, therefore orthogonal polynomials have limited use. If you want to test whether, say, a one degree polynomial is better than another degree, you need
+to use the more general ANOVA function.
 
 ```{r}
 fita=lm(wage~education,data=Wage)
 fitb=lm(wage~education+age,data=Wage)
 fitc=lm(wage~education+poly(age,2),data=Wage)
-fitd=lm(wage~education+poly(age,3),data=Wage)
+fitd=lm(wage~education+poly(age,3),data=Wage) # these are a nested sequence of models (i.e. the second model contains the variables from the first. The third model contains variables from the second and the first. And so on...)
 anova(fita,fitb,fitc,fitd)
 
 ```
@@ -90,23 +82,23 @@ Now we fit a logistic regression model to a binary response variable,
 constructed from `wage`. We code the big earners (`>250K`) as 1, else 0.
 
 ```{r}
-fit=glm(I(wage>250) ~ poly(age,3), data=Wage, family=binomial)
-summary(fit)
+fit=glm(I(wage>250) ~ poly(age,3), data=Wage, family=binomial) # We can create the binary target class on the fly using an indicator function, and in there we provide the condition, wage bigger than 250. That evaluates to a true / false variable, but if you coerce that to numeric it'll be a 0 / 1 variable.
+summary(fit) # And now because it's a GLM, even though the polynomial is an orthogonal basis, it's no longer strictly orthogonal when we fit a GLM, because GLM involves having weights for the observations, and so the orthogonality is somewhat lost. Therefore we can't comment on the significance of one polynomial coefficient alone. If we want to do the test, for example, if a polynomial of degree 3 was needed, we'd have to fit another GLM with a polynomial of degree 2 and test to see if the two are different. 
 preds=predict(fit,list(age=age.grid),se=T)
 se.bands=preds$fit + cbind(fit=0,lower=-2*preds$se,upper=2*preds$se)
 se.bands[1:5,]
 ```
 
-We have done the computations on the logit scale. To transform we need to apply the inverse logit
-mapping 
+We have done the computations on the logit scale. To transform we need to apply the inverse logit mapping 
 $$p=\frac{e^\eta}{1+e^\eta}.$$
 (Here we have used the ability of MarkDown to interpret TeX expressions.) 
 We can do this simultaneously for all three columns of `se.bands`:
 
 ```{r}
 prob.bands=exp(se.bands)/(1+exp(se.bands))
-matplot(age.grid,prob.bands,col="blue",lwd=c(2,1,1),lty=c(1,2,2),type="l",ylim=c(0,.1))
-points(jitter(age),I(wage>250)/10,pch="|",cex=.5)
+?matplot
+matplot(age.grid,prob.bands,col="blue",lwd=c(2,1,1),lty=c(1,2,2),type="l",ylim=c(0,.1)) # we had to add y axis limits because the confidence bands get wide
+points(jitter(age),I(wage>250)/10,pch="|",cex=.5) # Because there were lots of ties in age at each of the integer values of age, we use jitter of age to give an indication of how much data occurred at each age. Jitter randomly adds to each element of the vector age, a little bit of uniform random noise so you can get an idea of the density.
 ```
 
 Splines
@@ -114,28 +106,46 @@ Splines
 Splines are more flexible than polynomials, but the idea is rather similar.
 Here we will explore cubic splines.
 
- ```{r}
+```{r}
 library(splines)
-fit=lm(wage~bs(age,knots=c(25,40,60)),data=Wage)
+fit=lm(wage~bs(age,knots=c(25,40,60)),data=Wage) # The knots (at ages = 25,40,60) are places of discontinuity. The spline has cubic polynomials in each of the regions, but they constrain to be continuous at the knots, and they are constrained to have continuous first and second derivatives, which makes them really smooth. In fact, so smooth that the human eye cannot detect the discontinuity. They're  discontinuous in the third derivative, so the idea of splines is that they're more local than polynomials. So they don't have quite the wagging tails of polynomials, and they're a nice way of fitting flexible functions.
 plot(age,wage,col="darkgrey")
 lines(age.grid,predict(fit,list(age=age.grid)),col="darkgreen",lwd=2)
 abline(v=c(25,40,60),lty=2,col="darkgreen")
 ```
 
-The smoothing splines does not require knot selection, but it does have a smoothing parameter,
-which can conveniently be specified via the effective degrees of freedom or `df`.
+One step up from what we called fixed knot regression splines are smoothing splines. Smoothing splines are convenient because they have essentially knots everywhere, and they control how smooth a function is with the roughness penalty. The smoothing splines does not require knot selection, but it does have a smoothing parameter, which can conveniently be specified via the effective degrees of freedom or `df`.
 
 ```{r}
-fit=smooth.spline(age,wage,df=16)
+## create original plot
+fit=lm(wage~bs(age,knots=c(25,40,60)),data=Wage)
+plot(age,wage,col="darkgrey")
+lines(age.grid,predict(fit,list(age=age.grid)),col="darkgreen",lwd=2)
+abline(v=c(25,40,60),lty=2,col="darkgreen")
+
+## smoothing spline
+fit=smooth.spline(age,wage,df=16) # higher df lead to a more spikey fit while lower df lead to a smoother fit 
 lines(fit,col="red",lwd=2)
 ```
 
 Or we can use LOO cross-validation to select the smoothing parameter for us automatically:
 
 ```{r}
-fit=smooth.spline(age,wage,cv=TRUE)
+## create original plot
+fit=lm(wage~bs(age,knots=c(25,40,60)),data=Wage)
+plot(age,wage,col="darkgrey")
+lines(age.grid,predict(fit,list(age=age.grid)),col="darkgreen",lwd=2)
+abline(v=c(25,40,60),lty=2,col="darkgreen")
+summary(fit) # counting the number of paramters, there are 6 degrees of freedom
+
+## smoothing spline with 16 effective df
+fit=smooth.spline(age,wage,df=16)
+lines(fit,col="red",lwd=2)
+
+## smoothing spline using LOO CV
+fit=smooth.spline(age,wage,cv=TRUE) # notice we didn't specify the . A warning message does appear from the fit.
 lines(fit,col="purple",lwd=2)
-fit
+fit # notice CV produced an effective degrees of freedom = 6.79 
 ```
 
 Generalized Additive Models
@@ -147,27 +157,30 @@ it knows how to plot these functions and their standard errors.
 
 ```{r fig.width=10, fig.height=5}
 library(gam)
-gam1=gam(wage~s(age,df=4)+s(year,df=4)+education,data=Wage)
-par(mfrow=c(1,3))
-plot(gam1,se=T)
+gam1=gam(wage~s(age,df=4)+s(year,df=4)+education,data=Wage) # s() is a special function known to gam, and it tells gam it wants a smoothing spline in the variable age with four degrees of freedom, and likewise for the variable year
+par(mfrow=c(1,3)) # set up a plottign grid where we want 1 row, 3 columns
+plot(gam1,se=T) # produce a plot for each of the terms in the gam, and plotted those terms with the standard errors for each of those terms
 gam2=gam(I(wage>250)~s(age,df=4)+s(year,df=4)+education,data=Wage,family=binomial)
-plot(gam2)
+plot(gam2) # We left out se=T since some of the standard error bands are really wide. This is plotting the contributions to the logit of the probability, each as the separate functions, since the model is additive in those.
 ```
 
-Lets see if we need a nonlinear terms for year
+We can test to see if we need a nonlinear terms for year
 
 ```{r}
-gam2a=gam(I(wage>250)~s(age,df=4)+year+education,data=Wage,family=binomial)
+gam2a=gam(I(wage>250)~s(age,df=4)+year+education,data=Wage,family=binomial) # instead of having a smooh term for year, we'll just jave a linear term
 anova(gam2a,gam2,test="Chisq")
 ```
+
+The p value is 0.82, which says we really don't need this non-linear term for year. A linear term will be fine. If we wanted to, we can test further and see if you need a term at all for year.
+
 
 One nice feature of the `gam` package is that it knows how to plot the functions nicely,
 even for models fit by `lm` and `glm`.
 
 ```{r fig.width=10, fig.height=5}
 par(mfrow=c(1,3))
-lm1=lm(wage~ns(age,df=4)+ns(year,df=4)+education,data=Wage)
-plot.gam(lm1,se=T)
+lm1=lm(wage~ns(age,df=4)+ns(year,df=4)+education,data=Wage) # This looks like our gam() call but instead of s() we use ns() which is using a fixed basis (i.e. a reduced set of basis functions to represent the splines)
+plot.Gam(lm1,se=T) # with software updates, plot.gam() is now plot.Gam(). Notice this plot looks very similar to the gam1=gam(wage~s(age,df=4)+s(year,df=4)+education,data=Wage). Make a habit to look in the changelogs of the package of interest if something doesn't work as expected: https://cran.r-project.org/web/packages/gam/ChangeLog
 ```
 
 
