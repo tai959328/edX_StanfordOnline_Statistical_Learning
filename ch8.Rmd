@@ -1,0 +1,166 @@
+Decision Trees
+========================================================
+
+We will have a look at the `Carseats` data using the `tree` package in R, as in the lab in the book.
+We create a binary response variable `High` (for high sales), and we include it in the same dataframe.
+```{r}
+library(ISLR)
+library(tree)
+dim(Carseats)
+names(Carseats)
+attach(Carseats)
+hist(Carseats$Sales)
+High=ifelse(Sales<=8,"No","Yes")
+Carseats=data.frame(Carseats, High)
+table(Carseats$High)
+```
+Now we fit a tree to these data, and summarize and plot it. Notice that we have to _exclude_ `Sales` from the right-hand side of the formula, because the response is derived from it.
+```{r}
+tree.carseats=tree(High~.-Sales,data=Carseats)
+summary(tree.carseats)
+plot(tree.carseats)
+text(tree.carseats,pretty=0)
+```
+For a detailed summary of the tree, print it:
+```{r}
+tree.carseats
+```
+Lets create a training and test set (250,150) split of the 400 observations, grow the tree on the training set, and evaluate its performance on the test set.
+```{r}
+set.seed(1011)
+train=sample(1:nrow(Carseats),250)
+tree.carseats=tree(High~.-Sales,Carseats,subset=train)
+plot(tree.carseats);text(tree.carseats,pretty=0)
+
+# type="class" means the prediction will give the predicted class label (Not sure what threshold would be used but likely it's 0.5). We can make different types of predictions as well, in particular we can predict the probabilities.
+tree.pred=predict(tree.carseats,Carseats[-train,],type="class")
+
+# produce a confusion matrix for the test dataset
+with(Carseats[-train,],table(tree.pred,High))
+
+print(paste0("The misclassification rate is: ",(27+20)/150))
+```
+This tree was grown to full depth, and might be too variable. We now use CV to prune it.
+```{r}
+# 10-fold cross-validation (K=10 by default)
+cv.carseats=cv.tree(tree.carseats,FUN=prune.misclass)
+cv.carseats
+plot(cv.carseats)
+
+# prunes tree.carseats to 17 terminal nodes, as suggested from the deviance plot
+prune.carseats=prune.misclass(tree.carseats,best=17)
+plot(prune.carseats);text(prune.carseats,pretty=0)
+```
+size: size of the tree
+dev: deviance of the tree. Notice it goes down then back up
+k: cost complexity parameter
+
+
+Now lets evaluate this pruned tree on the test data.
+```{r}
+tree.pred=predict(prune.carseats,Carseats[-train,],type="class")
+with(Carseats[-train,],table(tree.pred,High))
+print(paste0("The misclassification rate is: ",(24+19)/150))
+```
+It has done about the same as our original tree. So pruning did not hurt us wrt misclassification errors, and gave us a simpler tree.
+
+
+
+
+
+
+
+
+
+
+Random Forests and Boosting
+============================
+
+These methods use trees as building blocks to build more complex models. Here we will use the Boston housing data to explore random forests and boosting. These data are in the `MASS` package.
+It gives housing values and other statistics in each of 506 suburbs of Boston based on a 1970 census.
+
+Random Forests
+--------------
+Random forests build lots of bushy trees, and then average them to reduce the variance.
+
+```{r}
+library(randomForest)
+library(MASS)
+set.seed(101)
+dim(Boston)
+train=sample(1:nrow(Boston),300)
+?Boston
+```
+Each row represents a suburb of Boston. For each suburb, we have demographics such as crime per capita, types of industry, average number of rooms per dwelling, average proportion of the age of the houses, etc.
+
+
+Lets fit a random forest and see how well it performs. We will use the response `medv`, the median housing value (in \$1K dollars)
+
+```{r}
+rf.boston=randomForest(medv~.,data=Boston,subset=train)
+rf.boston
+```
+The MSR and % variance explained are based on OOB  or _out-of-bag_ estimates, a very clever device in random forests to get honest error estimates. The model reports that `mtry=4`, which is the number of variables randomly chosen at each split. Since $p=13$ here, we could try all 13 possible values of `mtry`. We will do so, record the results, and make a plot.
+
+```{r}
+oob.err=double(13)
+test.err=double(13)
+for(mtry in 1:13){
+  fit=randomForest(medv~.,data=Boston,subset=train,mtry=mtry,ntree=400)
+  oob.err[mtry]=fit$mse[400]
+  pred=predict(fit,Boston[-train,])
+  test.err[mtry]=with(Boston[-train,],mean((medv-pred)^2))
+  cat(mtry," ")
+}
+matplot(1:mtry,cbind(test.err,oob.err),pch=19,col=c("red","blue"),type="b",ylab="Mean Squared Error")
+legend("topright",legend=c("Test","OOB"),pch=19,col=c("red","blue"))
+```
+
+Not too difficult! Now those two curves should line up but it seems like the OOB error is a bit lower. However be warned, there's a lot of variability in these MSE estimates. And so since the out-of-bag was computed on one data set and the test error on a different data set, and those data sets aren't very large, these differences are pretty much well within the standard errors. From the chart, it looks like m should be selected to be somewhere between 3 and 7. 
+And don't get fooled by the fact that the curves look smooth. These error estimates are very correlated, because the randomForest with mtry equals 4 is very similar to the one
+with mtry equals 5. And so that's why these curves, or each of the curves is quite smooth. Notice that the points at the end with `mtry=13` correspond to bagging (described below).
+
+Recall that bagging (aka bootstrap aggregation) is a general-purpose procedure for reducing the variance of a statistical learning method. The method is averaging a set of observations which reduces variance. We bootstrap by taking repeated samples from the (single) training data set. We then train our method (decision trees in this case) on bootstrapped training sets then average (or take majority class from) all the predictions to obtain the final prediction.
+
+Random forests provide an improvement over bagged trees by way of a small tweak that decorrelates the trees. This reduces the variance when we average the trees. As in bagging, we build a number of decision trees on bootstrapped training samples. But when building these decision trees, each time a split in a tree is considered, a random selection of m predictors is chosen as split candidates from the full set of p predictors. The split is allowed to use only one of those m predictors.
+
+It turns out that there is a very straightforward way to estimate the test error of a bagged model. Recall that the key to bagging is that trees are repeatedly fit to bootstrapped subsets of the observations. One can show that on average, each bagged tree makes use of around two-thirds of the observations. The remaining one-third of the observations not used to fit a given bagged tree are referred to as the out-of-bag (OOB) observations. We can predict the response for the ith observation using each of the trees in which that observation was OOB. This will yield around B/3 predictions for the ith observation, which we average.
+
+
+
+Boosting
+--------
+Random forests, as we learned in the course notes and lectures, reduce the variance of the trees by averaging. So it grows big bushy trees, and then gets rid of the variance by averaging. Boosting, on the other hand, is really going off to biasby growing smaller, stubbier trees and gets at the bias.
+Boosting builds lots of smaller trees. Unlike random forests, each new tree in boosting tries to patch up the deficiencies of the current ensemble.
+```{r}
+library(gbm)
+boost.boston=gbm(medv~.,data=Boston[train,],distribution="gaussian",n.trees=10000,shrinkage=0.01,interaction.depth=4)
+summary(boost.boston)
+# create partial dependence plots
+plot(boost.boston,i="lstat")
+plot(boost.boston,i="rm")
+```
+Based on the variable importance from the summary function, lstat and rm are the two most important predictors.
+
+These partial depedence plots shows us that the higher the proportion of lower status people in the suburb (variable lstat), the lower the value of the housing prices. And reversed relationship with the number of rooms (variable rm). As the average number of rooms in the house increases, the price increases.
+
+Lets make a prediction on the test set. With boosting, the number of trees is a tuning parameter, and if we have too many we can overfit. So we should use cross-validation to select the number of trees. We will leave this as an exercise. Instead, we will compute the test error as a function of the number of trees, and make a plot.
+
+Recall the tuning parametrs for a boosting is as follows:
+1. The number of trees B. Unlike bagging and random forests, boosting can overfit if B is too large, although this overfitting tends to occur slowly if at all. We use cross-validation to select B.
+2. The shrinkage parameter λ, a small positive number. This controls the rate at which boosting learns. Typical values are 0.01 or 0.001, and the right choice can depend on the problem. Very small λ can require using a very large value of B in order to achieve good performance.
+3. The number of splits d in each tree, which controls the complexity of the boosted ensemble. Often d = 1 works well, in which case each tree is a stump, consisting of a single split and resulting in an additive model. More generally d is the interaction depth, and controls the interaction order of the boosted model, since d splits can involve at most d variables.
+
+```{r}
+n.trees=seq(from=100,to=10000,by=100)
+predmat=predict(boost.boston,newdata=Boston[-train,],n.trees=n.trees)
+# recall there's 206 test observations
+dim(predmat)
+berr=with(Boston[-train,],apply( (predmat-medv)^2,2,mean))
+plot(n.trees,berr,pch=19,ylab="Mean Squared Error", xlab="# Trees",main="Boosting Test Error")
+# plot the minimun test error from the earlier random forest
+abline(h=min(oob.err),col="red")
+```
+For the plot of MSE as a function of the number of tree, the MSE it seems to level off, and it doesn't appear to be increasing. If you really ramped up the number of trees to a much bigger number, it would slowly start to increase. But this is evidence of the claim that boosting is reluctant to overfit.
+
+We're going to include the best OOB error from the earlier, as a horizontal red line. W see that boosting actually got a reasonable amount below the OOB error from the random forest. However, we do notice that the lowest test error for the random forest is below the MSE of this gbm, so perhaps the models in this case are on par with each other. 
