@@ -14,6 +14,7 @@ High=ifelse(Sales<=8,"No","Yes")
 Carseats=data.frame(Carseats, High)
 table(Carseats$High)
 ```
+
 Now we fit a tree to these data, and summarize and plot it. Notice that we have to _exclude_ `Sales` from the right-hand side of the formula, because the response is derived from it.
 ```{r}
 tree.carseats=tree(High~.-Sales,data=Carseats)
@@ -21,6 +22,7 @@ summary(tree.carseats)
 plot(tree.carseats)
 text(tree.carseats,pretty=0)
 ```
+
 For a detailed summary of the tree, print it:
 ```{r}
 tree.carseats
@@ -51,6 +53,7 @@ plot(cv.carseats)
 prune.carseats=prune.misclass(tree.carseats,best=17)
 plot(prune.carseats);text(prune.carseats,pretty=0)
 ```
+
 size: size of the tree
 dev: deviance of the tree. Notice it goes down then back up
 k: cost complexity parameter
@@ -140,6 +143,7 @@ summary(boost.boston)
 plot(boost.boston,i="lstat")
 plot(boost.boston,i="rm")
 ```
+
 Based on the variable importance from the summary function, lstat and rm are the two most important predictors.
 
 These partial depedence plots shows us that the higher the proportion of lower status people in the suburb (variable lstat), the lower the value of the housing prices. And reversed relationship with the number of rooms (variable rm). As the average number of rooms in the house increases, the price increases.
@@ -161,6 +165,7 @@ plot(n.trees,berr,pch=19,ylab="Mean Squared Error", xlab="# Trees",main="Boostin
 # plot the minimun test error from the earlier random forest
 abline(h=min(oob.err),col="red")
 ```
+
 For the plot of MSE as a function of the number of tree, the MSE it seems to level off, and it doesn't appear to be increasing. If you really ramped up the number of trees to a much bigger number, it would slowly start to increase. But this is evidence of the claim that boosting is reluctant to overfit.
 
-We're going to include the best OOB error from the earlier, as a horizontal red line. W see that boosting actually got a reasonable amount below the OOB error from the random forest. However, we do notice that the lowest test error for the random forest is below the MSE of this gbm, so perhaps the models in this case are on par with each other. 
+We're going to include the best OOB error from the earlier, as a horizontal red line. W see that boosting actually got a reasonable amount below the OOB error from the random forest. However, we do notice that the lowest test error for the random forest is below the MSE of this gbm, so perhaps the models in this case are on par with each other.
